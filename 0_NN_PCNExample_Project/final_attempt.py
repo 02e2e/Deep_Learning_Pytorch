@@ -200,8 +200,7 @@ class WordEmbedDataset(Dataset):
 # Create dataset
 dataset = WordEmbedDataset(sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target_data)
 
-# Create DataLoader
-dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+
 
 # # Iterate through DataLoader to test
 # for batch in dataloader:
@@ -228,7 +227,8 @@ def collate_fn(batch):
     
     return sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target
 
-
+# Create DataLoader
+dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=collate_fn)
 # Iterate through DataLoader to test the collate_fn
 for batch in dataloader:
     sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target = batch
@@ -250,7 +250,105 @@ for batch in dataloader:
     break  # Print only the first batch to check
 
 
+############## start here on Tuesday May 29th ##########
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
+class WordEmbeddingModel(nn.Module):
+    def __init__(self, vocab_size_1, vocab_size_2, vocab_size_multi_cat, num_numeric_features, embedding_dim=10, multi_cat_embedding_dim=5):
+        super(WordEmbeddingModel, self).__init__()
+        
+        self.embedding_1 = nn.Embedding(vocab_size_1, embedding_dim)
+        self.embedding_2 = nn.Embedding(vocab_size_2, embedding_dim)
+        self.multi_cat_embedding = nn.Embedding(vocab_size_multi_cat, multi_cat_embedding_dim)
+        
+        input_dim = 2 * embedding_dim + multi_cat_embedding_dim + num_numeric_features
+        self.linear1 = nn.Linear(input_dim, 128)
+        self.linear2 = nn.Linear(128, 1)
+        
+    def forward(self, text_1, text_2, numeric_features, multi_class_cat_data):
+        embed_1 = self.embedding_1(text_1).mean(dim=1)  # Averaging over the sequence dimension
+        embed_2 = self.embedding_2(text_2).mean(dim=1)  # Averaging over the sequence dimension
+        embed_multi_cat = self.multi_cat_embedding(multi_class_cat_data).mean(dim=1)  # Embedding multi-class categorical data
+        
+        combined_embeds = torch.cat((embed_1, embed_2, embed_multi_cat, numeric_features), dim=1)
+        out = F.relu(self.linear1(combined_embeds))
+        out = self.linear2(out)
+        log_probs = torch.sigmoid(out)
+        return log_probs
+
+
+import torch.optim as optim
+from sklearn.model_selection import KFold
+from sklearn.metrics import accuracy_score
+
+# Assuming your data is prepared and accessible within the dataloader
+
+# Define model parameters
+vocab_size_1 = len(word_to_ix1)  # For sentence
+vocab_size_2 = len(word_to_ix)   # For company
+num_numeric_features = 1  # Number of numeric features, in this case, quantity
+
+# Initialize model, loss function, and optimizer
+model = WordEmbeddingModel(vocab_size_1, vocab_size_2, num_numeric_features)
+loss_function = nn.BCEWithLogitsLoss()  # Binary classification
+optimizer = optim.Adam(model.parameters(), lr=0.001)  # Adjust optimizer if needed
+
+# K-fold cross-validation
+kf = KFold(n_splits=5)
+X = list(range(len(dataset)))  # Indices for the dataset
+y = target_data  # Your target data
+
+cv_accuracies = []
+
+for train_index, test_index in kf.split(X):
+    # Split data
+    train_data = torch.utils.data.Subset(dataset, train_index)
+    test_data = torch.utils.data.Subset(dataset, test_index)
+    
+    train_loader = DataLoader(train_data, batch_size=4, shuffle=True, collate_fn=collate_fn)
+    test_loader = DataLoader(test_data, batch_size=4, shuffle=False, collate_fn=collate_fn)
+    
+    # Training
+    model.train()
+    for epoch in range(10):  # Lower number of epochs for brevity
+        total_loss = 0
+        for text_1, text_2, numeric_features, multi_class_cat_data, target in train_loader:
+            # Data Processing
+            numeric_features = numeric_features.unsqueeze(1)  # Ensuring correct shape
+            target = target.unsqueeze(1).float()  # Ensuring correct shape
+            
+            # Training Step
+            optimizer.zero_grad()
+            log_probs = model(text_1, text_2, numeric_features)
+            loss = loss_function(log_probs, target)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        print(f"Epoch {epoch+1}, Loss: {total_loss}")
+    
+    # Evaluation
+    model.eval()
+    all_preds = []
+    all_targets = []
+    with torch.no_grad():
+        for text_1, text_2, numeric_features, multi_class_cat_data, target in test_loader:
+            numeric_features = numeric_features.unsqueeze(1)
+            target = target.unsqueeze(1).float()
+            
+            log_probs = model(text_1, text_2, numeric_features)
+            preds = (log_probs > 0.5).float()
+            all_preds.extend(preds.cpu().numpy())
+            all_targets.extend(target.cpu().numpy())
+    
+    accuracy = accuracy_score(all_targets, all_preds)
+    cv_accuracies.append(accuracy)
+    print(f"Fold Accuracy: {accuracy}")
+
+print(f"Mean CV Accuracy: {np.mean(cv_accuracies)}")
+
+############## end of May 29th Tuesday ##########
 
 
 
