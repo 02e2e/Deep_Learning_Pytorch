@@ -1,0 +1,92 @@
+To pass your data through a neural network and get an accuracy score, you'll need to:
+
+Split your data into training and testing sets: Use train_test_split from scikit-learn to split your data into training and testing sets.
+Create a custom dataset class: Create a custom dataset class that loads your data, preprocesses it, and returns the input and target tensors.
+Create a neural network model: Define a neural network model using PyTorch that takes the preprocessed input data and outputs a prediction.
+Train the model: Train the model using the training data and a suitable optimizer and loss function.
+Evaluate the model: Evaluate the model on the testing data and calculate the accuracy score.
+Here's some sample code to get you started:
+
+# Split data into training and testing sets
+from sklearn.model_selection import train_test_split
+train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
+
+# Create a custom dataset class
+class MyDataset(Dataset):
+    def __init__(self, df, numeric_columns, categorical_columns):
+        self.df = df
+        self.numeric_columns = numeric_columns
+        self.categorical_columns = categorical_columns
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        numeric_data = self.df[self.numeric_columns].iloc[idx].values
+        categorical_data = []
+        for col in self.categorical_columns:
+            words = self.df[col].iloc[idx].split()
+            word_ids = [word_to_ix[col].get(word, 0) for word in words]
+            categorical_data.extend(word_ids)
+        return {
+            'numeric': torch.tensor(numeric_data, dtype=torch.float),
+            'categorical': torch.tensor(categorical_data, dtype=torch.long),
+            'target': torch.tensor(self.df['procedureAnalysedMedia'].iloc[idx], dtype=torch.long)
+        }
+
+# Create a neural network model
+class MyModel(nn.Module):
+    def __init__(self, numeric_columns, categorical_columns):
+        super(MyModel, self).__init__()
+        self.numeric_columns = numeric_columns
+        self.categorical_columns = categorical_columns
+        self.fc1 = nn.Linear(len(numeric_columns) + len(categorical_columns), 128)
+        self.fc2 = nn.Linear(128, 2)
+
+    def forward(self, x):
+        x_numeric = x['numeric']
+        x_categorical = x['categorical']
+        x = torch.cat((x_numeric, x_categorical), dim=1)
+        x = torch.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+# Create data loaders
+train_dataset = MyDataset(train_df, numeric_columns_list, longer_cat_col_list)
+test_dataset = MyDataset(test_df, numeric_columns_list, longer_cat_col_list)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+# Create the model, optimizer, and loss function
+model = MyModel(numeric_columns_list, longer_cat_col_list)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+criterion = nn.CrossEntropyLoss()
+
+# Train the model
+for epoch in range(10):
+    for batch in train_loader:
+        optimizer.zero_grad()
+        inputs, targets = batch
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
+
+# Evaluate the model
+model.eval()
+test_loss = 0
+correct = 0
+with torch.no_grad():
+    for batch in test_loader:
+        inputs, targets = batch
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
+        test_loss += loss.item()
+        _, predicted = torch.max(outputs, 1)
+        correct += (predicted == targets).sum().item()
+
+accuracy = correct / len(test_loader.dataset)
+print(f'Test accuracy: {accuracy:.4f}')
+Note that this is just a starting point, and you'll likely need to modify the code to suit your specific needs. You may also need to adjust the architecture of the neural network, the optimizer, and the loss function to achieve the best results.
+
+
