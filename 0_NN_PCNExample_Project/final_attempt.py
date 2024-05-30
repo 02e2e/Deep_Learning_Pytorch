@@ -1,6 +1,6 @@
-
-#### attempt 1 on wedensday 
-
+##########################################################
+# Neural Network with Word Embeddings and Multiple Inputs
+##########################################################
 # Load Dependencies
 import numpy as np
 import pandas as pd
@@ -9,16 +9,17 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-import numpy as np 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics import accuracy_score
 import random
-import string
-import re
-import pandas as pd
-import numpy as np
-import random
-
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
+from sklearn.model_selection import KFold
+import torch.nn.utils.rnn as rnn_utils
+##########################################################
+# Create Data 
+##########################################################
 # Sentences (varying length 2-10 words)
 words = ["the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog", "eats", "food"]
 sentences = []
@@ -52,55 +53,31 @@ data = {
 }
 df = pd.DataFrame(data)
 
-############# Data Above ########
-
-#################################################################
-
-
+##########################################################
+# Label Encoding and Normalization
+##########################################################
 df.dtypes
-# identify numeric columns 
-numeric_columns = df['quantity']
-numeric_columns_values = numeric_columns.values
-# identify categorical columns 
-categorical_columns = ['color']
-longer_cat_variables = ['sentence', 'company']
-longer_cat_var_values = df.loc[:, ['sentence', 'company']].values
 
-
-
-
-# preprocess data 
 # Apply StandardScaler normalization to numeric columns
 scaler = StandardScaler()
 df['quantity'] = scaler.fit_transform(df['quantity'].values.reshape(-1, 1))
-
-
 
 # label encoding our target variable to a 0/1 
 le = LabelEncoder()
 # encode = OneHotEncoder()
 df['color'] = le.fit_transform(df['color'])
-# df['procedureAnalysedMedia'] = encode.fit_transform(df['procedureAnalysedMedia'])
-
-# target_column = df['procedureAnalysedMedia']
 
 # Extract target variable values from the DataFrame
 target_data = df['target'].values  # This creates a NumPy array of the target variable
 
 # drop the target variable 
-df.drop('target', axis=1, inplace=True) # these are one-hot encoded 
-# target = 'target'
+df.drop('target', axis=1, inplace=True) 
 numeric_data = df['quantity'].values
 multi_class_cat_data = df['color'].values
 
-
-
-######################################################################
-
-######## end of May 28th Tuesday ##########
-EMBEDDING_DIM = 10 
-from torch.nn.utils.rnn import pad_sequence
-
+##########################################################
+# Tokenization and Padding
+##########################################################
 CONTEXT_SIZE = 2  
 companies, company_vocab = [], []  
 for company in df['company']:
@@ -126,10 +103,7 @@ company_data_padded = pad_sequence([torch.tensor(seq) for seq in company_data], 
 company_data_padded.shape
 # torch.Size([20, 8])
 
-
-
-
-####
+##########################################################
 
 CONTEXT_SIZE = 4
 sentences, sentences_vocab = [], []  
@@ -156,79 +130,54 @@ sentence_data_padded = pad_sequence([torch.tensor(seq) for seq in sentence_data]
 sentence_data_padded.shape
 # torch.Size([20, 10])
 
-# Concatenate along a new dimension (dim=1 to stack horizontally)
-# combined_data = torch.cat((company_data_padded, sentence_data_padded), dim=1)
 
-# print(combined_data.shape) 
-##############
-# New May 29th Tuesday 
-
-import torch
-from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
-
+##########################################################
+# Tensorize, Pad, and Create DataLoader
+##########################################################
 class WordEmbedDataset(Dataset):
     def __init__(self, sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target_data):
         self.sentence_data_padded = sentence_data_padded
-        print("Sample of sentence_data_padded:", sentence_data_padded[0])
-        
         self.company_data_padded = company_data_padded
-        print("Sample of company_data_padded:", company_data_padded[0])
-        
         self.numeric_data = numeric_data
-        print("Sample of numeric_data:", numeric_data[0])
-        
         self.multi_class_cat_data = multi_class_cat_data
-        print("Sample of multi_class_cat_data:", multi_class_cat_data[0])
-        
         self.target_data = target_data
-        print("Sample of target_data:", target_data[0])
     
     def __getitem__(self, index):
         sentence_data_padded = torch.tensor(self.sentence_data_padded[index], dtype=torch.long)
         company_data_padded = torch.tensor(self.company_data_padded[index], dtype=torch.long)
+        # numeric_data = torch.tensor(self.numeric_data[index], dtype=torch.float32).unsqueeze(0)  # Ensure shape [1]
         numeric_data = torch.tensor(self.numeric_data[index], dtype=torch.float32)
         multi_class_cat_data = torch.tensor(self.multi_class_cat_data[index], dtype=torch.long)
-        target = torch.tensor(self.target_data[index], dtype=torch.float32) # Adjust if necessary
-        
+        # target = torch.tensor(self.target_data[index], dtype=torch.float32).unsqueeze(0)  # Ensure shape [1]
+        target = torch.tensor(self.target_data[index], dtype=torch.float32)
         return sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target
     
     def __len__(self):
         return len(self.sentence_data_padded)
 
-
 # Create dataset
 dataset = WordEmbedDataset(sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target_data)
+# Create DataLoader
 
 
-
-# # Iterate through DataLoader to test
-# for batch in dataloader:
-#     sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target = batch
-#     print("Batch of sentence_data_padded:", sentence_data_padded)
-#     print("Batch of company_data_padded:", company_data_padded)
-#     print("Batch of numeric_data:", numeric_data)
-#     print("Batch of multi_class_cat_data:", multi_class_cat_data)
-#     print("Batch of target:", target)
-#     break  # Print only the first batch to check
 
 # Now we are here below 
-
 def collate_fn(batch):
-    # Unzip the batch
     sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target = zip(*batch)
     
-    # Stack numeric and categorical data
     sentence_data_padded = torch.stack(sentence_data_padded)
     company_data_padded = torch.stack(company_data_padded)
-    numeric_data = torch.stack(numeric_data)
+    numeric_data = torch.stack(numeric_data) 
     multi_class_cat_data = torch.stack(multi_class_cat_data)
-    target = torch.stack(target)
+    # target = torch.stack(target)
+    target = torch.stack(target).view(-1, 1)  # Ensure shape [batch_size, 1]    
     
     return sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target
 
+
 # Create DataLoader
-dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=collate_fn)
+dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=collate_fn, drop_last=True)
+
 # Iterate through DataLoader to test the collate_fn
 for batch in dataloader:
     sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target = batch
@@ -249,597 +198,269 @@ for batch in dataloader:
     
     break  # Print only the first batch to check
 
+##########################################################
+# Define Model
+##########################################################
+vocab_size_1 = len(word_to_ix) 
+print(vocab_size_1)
+vocab_size_2 = len(word_to_ix1)
+print(vocab_size_2)
+num_colors = len(set(df['color']))
+print(num_colors)
+num_numeric_features = 1  #
+print(vocab_size_1, vocab_size_2, num_colors, num_numeric_features )
+print([len(seq) for seq in sentence_data_padded])
+print([len(seq) for seq in sentence_data_padded])
 
-############## start here on Tuesday May 29th ##########
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
+print(sentence_data_padded.shape, company_data_padded.shape, numeric_data.shape, multi_class_cat_data.shape)
 class WordEmbeddingModel(nn.Module):
-    def __init__(self, vocab_size_1, vocab_size_2, vocab_size_multi_cat, num_numeric_features, embedding_dim=10, multi_cat_embedding_dim=5):
+    def __init__(self, vocab_size_1, vocab_size_2, num_colors, num_numeric_features, embedding_dim=10):
+  
         super(WordEmbeddingModel, self).__init__()
         
         self.embedding_1 = nn.Embedding(vocab_size_1, embedding_dim)
         self.embedding_2 = nn.Embedding(vocab_size_2, embedding_dim)
-        self.multi_cat_embedding = nn.Embedding(vocab_size_multi_cat, multi_cat_embedding_dim)
+        self.multi_cat_embedding = nn.Embedding(num_colors, embedding_dim)
+
         
-        input_dim = 2 * embedding_dim + multi_cat_embedding_dim + num_numeric_features
+        input_dim = 2 * embedding_dim + num_colors + num_numeric_features
         self.linear1 = nn.Linear(input_dim, 128)
         self.linear2 = nn.Linear(128, 1)
+# here we take the data from that the collate_fn function returns
+    def forward(self, sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data):
+        # Process the variable-length sequences
+        print(f"sentence_data_padded dtype: {sentence_data_padded.dtype}")
+        print(f"company_data_padded dtype: {company_data_padded.dtype}")
+        print(f"numeric_data dtype: {numeric_data.dtype}")
+        print(f"multi_class_cat_data dtype: {multi_class_cat_data.dtype}")
+        # lengths = [len(seq) for seq in sentence_data_padded]
+        # text_1_packed = rnn_utils.pack_padded_sequence(self.embedding_1(sentence_data_padded), lengths= lengths, batch_first=True, enforce_sorted=False)
+        # company_lengths = [len(seq) for seq in company_data_padded]
+        # text_2_packed = rnn_utils.pack_padded_sequence(self.embedding_2(company_data_padded), company_lengths, batch_first=True, enforce_sorted=False)
+        text_1_packed = self.embedding_1(sentence_data_padded)
+        text_2_packed = self.embedding_1(sentence_data_padded)
+        print(f"text_1_packed shape after packing: {text_1_packed.data.shape}")
+        print(f"text_2_packed shape after packing: {text_1_packed.data.shape}")
+
+        # Process the packed sequences
+        embed_1, _ = rnn_utils.pad_packed_sequence(text_1_packed, batch_first=True)
+        # embed_1 = embed_1.mean(dim=1)  # Averaging over the sequence dimension
+
+        embed_2, _ = rnn_utils.pad_packed_sequence(text_2_packed, batch_first=True)
+        # embed_2 = embed_2.mean(dim=1)  # Averaging over the sequence dimension
+        print(f"embed_1 shape after padding: {embed_1.shape}")
+        print(f"embed_2 shape after padding: {embed_2.shape}")
+
+        numeric_ = numeric_data.unsqueeze(1).repeat(1, self.embedding_dim)  # Assuming numeric_data is a single number
+        embed_multi_cat = self.multi_cat_embedding(multi_class_cat_data).mean(dim=1).unsqueeze(1)
+# Take the mean after unsqueezing
         
-    def forward(self, text_1, text_2, numeric_features, multi_class_cat_data):
-        embed_1 = self.embedding_1(text_1).mean(dim=1)  # Averaging over the sequence dimension
-        embed_2 = self.embedding_2(text_2).mean(dim=1)  # Averaging over the sequence dimension
-        embed_multi_cat = self.multi_cat_embedding(multi_class_cat_data).mean(dim=1)  # Embedding multi-class categorical data
+        combined_embeds = torch.cat((embed_1, embed_2, embed_multi_cat, numeric_), dim=1)
         
-        combined_embeds = torch.cat((embed_1, embed_2, embed_multi_cat, numeric_features), dim=1)
         out = F.relu(self.linear1(combined_embeds))
         out = self.linear2(out)
         log_probs = torch.sigmoid(out)
         return log_probs
 
 
-import torch.optim as optim
-from sklearn.model_selection import KFold
-from sklearn.metrics import accuracy_score
 
-# Assuming your data is prepared and accessible within the dataloader
-
-# Define model parameters
-vocab_size_1 = len(word_to_ix1)  # For sentence
-vocab_size_2 = len(word_to_ix)   # For company
-num_numeric_features = 1  # Number of numeric features, in this case, quantity
-
-# Initialize model, loss function, and optimizer
-model = WordEmbeddingModel(vocab_size_1, vocab_size_2, num_numeric_features)
+model = WordEmbeddingModel(vocab_size_1, vocab_size_2, num_colors, num_numeric_features, embedding_dim=20)
+print(model)
 loss_function = nn.BCEWithLogitsLoss()  # Binary classification
+
 optimizer = optim.Adam(model.parameters(), lr=0.001)  # Adjust optimizer if needed
 
-# K-fold cross-validation
-kf = KFold(n_splits=5)
+##########################################################
+# Training and Evaluation
+
+# kf = KFold(n_splits=5)
+X = list(range(len(dataset)))  # Indices for the dataset
+
+from sklearn.model_selection import KFold
+
+kf = KFold(n_splits=3)  # Ensure n_splits is not greater than the number of samples
 X = list(range(len(dataset)))  # Indices for the dataset
 y = target_data  # Your target data
-
 cv_accuracies = []
 
 for train_index, test_index in kf.split(X):
     # Split data
     train_data = torch.utils.data.Subset(dataset, train_index)
     test_data = torch.utils.data.Subset(dataset, test_index)
-    
+
     train_loader = DataLoader(train_data, batch_size=4, shuffle=True, collate_fn=collate_fn)
     test_loader = DataLoader(test_data, batch_size=4, shuffle=False, collate_fn=collate_fn)
-    
+
     # Training
     model.train()
     for epoch in range(10):  # Lower number of epochs for brevity
         total_loss = 0
-        for text_1, text_2, numeric_features, multi_class_cat_data, target in train_loader:
-            # Data Processing
-            numeric_features = numeric_features.unsqueeze(1)  # Ensuring correct shape
-            target = target.unsqueeze(1).float()  # Ensuring correct shape
-            
-            # Training Step
+        for sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target in train_loader:
+            # Training Step (as described earlier)
             optimizer.zero_grad()
-            log_probs = model(text_1, text_2, numeric_features)
+            log_probs = model(sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data)
             loss = loss_function(log_probs, target)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-        print(f"Epoch {epoch+1}, Loss: {total_loss}")
-    
+        print(f"Epoch {epoch+1}, Training Loss: {total_loss}")
+
     # Evaluation
     model.eval()
-    all_preds = []
-    all_targets = []
-    with torch.no_grad():
-        for text_1, text_2, numeric_features, multi_class_cat_data, target in test_loader:
-            numeric_features = numeric_features.unsqueeze(1)
-            target = target.unsqueeze(1).float()
-            
-            log_probs = model(text_1, text_2, numeric_features)
-            preds = (log_probs > 0.5).float()
-            all_preds.extend(preds.cpu().numpy())
-            all_targets.extend(target.cpu().numpy())
-    
-    accuracy = accuracy_score(all_targets, all_preds)
+    accuracy = evaluate_model(test_loader)  # Replace with your evaluation function
     cv_accuracies.append(accuracy)
-    print(f"Fold Accuracy: {accuracy}")
 
-print(f"Mean CV Accuracy: {np.mean(cv_accuracies)}")
-
-############## end of May 29th Tuesday ##########
-
-
-
-
-
-
-
-
-
-
-
-######## end of May 28th Tuesday ##########
-
-
-
-
-
-# ######################################
-# # Last week prior to May 28th 
-# import torch
-# from torch.utils.data import Dataset, DataLoader
-# from torch.nn.utils.rnn import pad_sequence
-# class WordEmbedDataset(Dataset):
-#     def __init__(self, sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data,target_data):
-#         self.sentence_data_padded = sentence_data_padded
-#         print("Sample of text_data_1:", sentence_data_padded[0])  # Print the first element
-
-#         self.company_data_padded = company_data_padded
-#         print("Sample of text_data_2:", company_data_padded[0])
-        
-#         self.numeric_data = numeric_data
-#         print("Sample of numeric_features:", numeric_data[0])
-        
-#         self.multi_class_cat_data = multi_class_cat_data
-#         print("Sample of numeric_features:", multi_class_cat_data[0])
-        
-#         self.target_data = target_data
-#         print("Sample of target_data:", target_data[0])
-      
-      
-#     def __getitem__(self, index):
-#         sentence_data_padded = torch.tensor(self.sentence_data_padded[index], dtype=torch.long)
-#         company_data_padded = torch.tensor(self.company_data_padded[index], dtype=torch.long)
-#         multi_class_cat_data = torch.tensor(self.multi_class_cat_data[index], dtype=torch.int64) 
-#         numeric_data = torch.tensor(self.numeric_data[index], dtype=torch.float32)
-#         target = torch.tensor(self.target_data[index], dtype=torch.float32)  # Adjust if necessary
-#         return sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target
-
-    # ... (Your __len__ method remains the same)
-    #     sentence_data_padded = torch.tensor(self.sentence_data_padded[index], dtype=torch.long)  # Specify long dtype
-    #     company_data_padded = torch.tensor(self.company_data_padded[index], dtype=torch.long)  # Specify long dtype
-    #     multi_class_cat_data = torch.tensor(self.multi_class_cat_data[index], dtype=torch.int64) 
-    #     numeric_data = torch.tensor(self.numeric_data[index], dtype=torch.float32) 
-    #     target = self.target_data[index] # Add this line for the targets
-    #     target = torch.tensor(target, dtype=torch.int64) # or .float32
-    #     return sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target 
-    
-    # def __len__(self):
-    #     return len(self.sentence_data_padded)  # Assuming lists have the same length 
-
-# dataset = WordEmbedDataset(sentence_data_padded, company_data_padded, df['quantity'].values, df['color'].values, df['target'].values)
-# dataloader = DataLoader(dataset, batch_size=32, shuffle=True) 
-
-
-
-
-#######################
-
-####################################### May 17 Friday below 
-# May 17 Friday
-# updateing the dataset once again 
-
-# import torch
-# from torch.utils.data import Dataset, DataLoader
-# from torch.nn.utils.rnn import pad_sequence
-
-# class WordEmbedDataset(Dataset):
-#     def __init__(self, text_data_1, text_data_2, numeric_data, multi_class_cat_data, target_data):
-#         self.text_data_1 = [torch.tensor(data, dtype=torch.long) for data in text_data_1]
-#         self.text_data_2 = [torch.tensor(data, dtype=torch.long) for data in text_data_2]
-#         self.numeric_data = [torch.tensor(data, dtype=torch.float32) for data in numeric_data]
-#         self.multi_class_cat_data = [torch.tensor(data, dtype=torch.int64) for data in multi_class_cat_data]
-#         self.target_data = [torch.tensor(data, dtype=torch.int64) for data in target_data]
-        
-#         print("Sample of text_data_1:", self.text_data_1[0])  # Print the first element
-#         print("Sample of text_data_2:", self.text_data_2[0])
-#         print("Sample of numeric_features:", self.numeric_data[0])
-#         print("Sample of multi_class_cat_data:", self.multi_class_cat_data[0])
-#         # print("Sample of target_data:", self.target_data[0])
-
-#     def __getitem__(self, index):
-#         # Retrieve data for the given index
-#         text_data_1 = self.text_data_1[index]
-#         text_data_2 = self.text_data_2[index]
-#         numeric_data = self.numeric_data[index]
-#         multi_class_cat_data = self.multi_class_cat_data[index]
-#         target = self.target_data[index]
-        
-#         # Ensure that text_data_1 and text_data_2 are lists of sequences
-#         if not isinstance(text_data_1, list):
-#             text_data_1 = [text_data_1]
-#         if not isinstance(text_data_2, list):
-#             text_data_2 = [text_data_2]
-        
-#         print("Type of text_data_1:", type(text_data_1))
-#         print("Type of text_data_2:", type(text_data_2))
-#         print("Length of text_data_1:", len(text_data_1))
-#         print("Length of text_data_2:", len(text_data_2))
-        
-#         # Pad text data sequences
-#         text_data_1_padded = pad_sequence([torch.tensor(seq) for seq in text_data_1], batch_first=True, padding_value=0)
-#         text_data_2_padded = pad_sequence([torch.tensor(seq) for seq in text_data_2], batch_first=True, padding_value=0)
-        
-#         return text_data_1_padded, text_data_2_padded, numeric_data, multi_class_cat_data, target
-
-# def collate_fn(batch):
-#     # Unzip the batch
-#     text_data_1_padded, text_data_2_padded, numeric_data, multi_class_cat_data, target = zip(*batch)
-    
-#     # Stack numeric and categorical data
-#     numeric_data = torch.stack(numeric_data)
-#     multi_class_cat_data = torch.stack(multi_class_cat_data)
-#     target = torch.stack(target)
-    
-#     return text_data_1_padded, text_data_2_padded, numeric_data, multi_class_cat_data, target
-
-
-
-# dataset = WordEmbedDataset(text_data_1, text_data_2, numeric_data, multi_class_cat_data, target_data)
-# dataloader = DataLoader(dataset, batch_size=2, collate_fn=collate_fn, shuffle=False)
-
-# # Iterate over batches
-# for i, batch in enumerate(dataloader):
-#     text_data_1_padded, text_data_2_padded, numeric_data, multi_class_cat_data, target = batch
-#     print(f"Batch {i+1}:")
-#     print(f"  Text Data 1 shape: {text_data_1_padded[0].shape}")  # Accessing shape of the first tensor
-#     print(f"  Text Data 2 shape: {text_data_2_padded[0].shape}")  # Accessing shape of the first tensor
-#     print(f"  Numeric Data shape: {numeric_data.shape}")
-#     print(f"  Multi-class Cat Data shape: {multi_class_cat_data.shape}")
-#     print(f"  Target shape: {target.shape}")
-
-
-
-
-
-
-
-################ FRIDAY ABOVE MAY 17 
-
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader
-
-# Example NGram Language Modeler
-class NGramLanguageModeler(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, context_size):
-        super(NGramLanguageModeler, self).__init__()
-        self.embeddings = nn.Embedding(vocab_size, embedding_dim)
-        self.linear1 = nn.Linear(context_size * embedding_dim, 128)
-        self.linear2 = nn.Linear(128, vocab_size)
-
-    def forward(self, inputs):
-        embeds = self.embeddings(inputs).view((1, -1))
-        out = torch.relu(self.linear1(embeds))
-        out = self.linear2(out)
-        log_probs = torch.log_softmax(out, dim=1)
-        return log_probs
-
-# Assuming vocab_size and embedding_dim are defined
-vocab_size = 100  # Example vocab size
-embedding_dim = 10  # Example embedding dimension
-context_size = 3  # Example context size for NGram model
-
-# Instantiate model, loss function, and optimizer
-model = NGramLanguageModeler(vocab_size, embedding_dim, context_size)
-loss_function = nn.NLLLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.01)
-
-# Example data (using your dataset and dataloader)
-text_data_1 = [[1, 2, 3], [4, 5, 6]]
-text_data_2 = [[7, 8, 9], [10, 11, 12]]
-numeric_data = [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]
-multi_class_cat_data = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]]
-target_data = [0, 1]
-
-dataset = WordEmbedDataset(text_data_1, text_data_2, numeric_data, multi_class_cat_data, target_data)
-dataloader = DataLoader(dataset, batch_size=2, collate_fn=collate_fn, shuffle=False)
-
-# Training loop (example)
-for epoch in range(10):  # Example number of epochs
-    total_loss = 0
-    for text_data_1, text_data_2, numeric_data, multi_class_cat_data, target in dataloader:
-        # Assuming text_data_1 is used for the NGram modeler input
-        model.zero_grad()
-        log_probs = model(text_data_1)
-        loss = loss_function(log_probs, target)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-    print(f"Epoch {epoch+1}, Loss: {total_loss}")
-
-# Note: Adjust the training loop and model according to your specific task and requirements.
-
-######################################
-
-# from torch.nn.utils.rnn import pad_sequence
-
-# def pad_collate(batch):
-#     # Sample batch: [([text_indices], [other_text_indices], numeric_features, label), ...]
-#     text_1, text_2, numeric_data, multi_class_cat_data, labels = zip(*batch)  # Unpack the batch assuming the data point is a tuple 
-
-#     padded_text_1 = pad_sequence(text_1, batch_first=True, padding_value=OOV_INDEX)
-#     padded_text_2 = pad_sequence(text_2, batch_first=True, padding_value=OOV_INDEX)
-
-#     # Convert to PyTorch tensors
-#     numeric_data = torch.stack(numeric_data) 
-#     multi_class_cat_data = torch.stack(multi_class_cat_data) 
-#     labels = torch.tensor(labels) # convert to pytorch tensors 
-
-#     return padded_text_1, padded_text_2, numeric_data, multi_class_cat_data, labels
-
-# ##########################
-# # create an object representing the instance of the custom dataset class
-# my_dataset = WordEmbedDataset(text_data_1, text_data_2, numeric_data, multi_class_cat_data, target_data) 
-# # created a dataloader object ready to iterate over your dataset batches. 
-# dataloader = DataLoader(my_dataset, batch_size=32, shuffle=True, collate_fn=pad_collate) 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#################################
-import torch.nn as nn
-
-class SimpleMultiModalNN(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, num_features, cat_features, output_dim):
-        super().__init__()
-
-        # Embedding layers for text features (adjust dimensions if needed)
-        self.embedding_1 = nn.Embedding(vocab_size, embedding_dim)
-        self.embedding_2 = nn.Embedding(vocab_size, embedding_dim)
-
-        # Linear layers for numerical features
-        self.linear_numeric = nn.Linear(num_features, 32) 
-
-        # Linear layers for categorical features (one-hot encoding assumed)
-        self.linear_cat = nn.Linear(cat_features, 16)  
-
-        # Hidden layers (adjust these as needed)
-        self.hidden_1 = nn.Linear(32 + 32 + 16, 64)  # Concatenated embeddings and features
-        self.relu = nn.ReLU()
-        self.hidden_2 = nn.Linear(64, 32)
-
-        # Output layer (since you have a binary classification problem)
-        self.output = nn.Linear(32, output_dim)  
-
-    def forward(self, text_data_1, text_data_2, numeric_data, cat_data):
-        embedded_1 = self.embedding_1(text_data_1)
-        embedded_2 = self.embedding_2(text_data_2)
-
-        # Optionally average or concatenate word embeddings here
-
-        numeric_out = self.relu(self.linear_numeric(numeric_data))
-        cat_out = self.relu(self.linear_cat(cat_data))
-
-        combined = torch.cat([embedded_1, embedded_2, numeric_out, cat_out], dim=1)
-        hidden_out = self.relu(self.hidden_1(combined))
-        hidden_out = self.relu(self.hidden_2(hidden_out))
-        output = self.output(hidden_out)
-        return output
-
-
-# ... (Your imports, data loading, and preprocessing)
-
-# NO LONGER SPLITTING HERE!
-import torch.optim as optim
-num_epochs = 10
-learning_rate = 0.001
-batch_size = 32  # Added batch size
-# Initialize Model, Loss Function, and Optimizer
-vocab_size = len(vocab) 
-num_features = numeric_data.shape[1] 
-cat_features = multi_class_cat_data.shape[1] 
-
-model = SimpleMultiModalNN(vocab_size, EMBEDDING_DIM, num_features, cat_features, output_dim=1)  
-criterion = nn.BCEWithLogitsLoss() 
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-# Create single dataloader object 
-dataloader = DataLoader(
-    WordEmbedDataset(text_data_1, text_data_2, numeric_data, multi_class_cat_data, target_data), 
-    batch_size=batch_size, 
-    shuffle=True, 
-    collate_fn=pad_collate) 
-
-# Modified Training Loop (No separate validation)
-def train_model(model, dataloader, criterion, optimizer, num_epochs):
-    for epoch in range(num_epochs):
-        model.train()  
-        for text_data_1, text_data_2, numeric_data, multi_class_cat_data, targets in dataloader: 
-            optimizer.zero_grad()  
-            outputs = model(text_data_1, text_data_2, numeric_data, multi_class_cat_data)  
-            loss = criterion(outputs.squeeze(1), targets.float())  
-            loss.backward()
-            optimizer.step()
-        print(f'Epoch {epoch + 1}, Loss: {loss.item():.4f}')
-
-
-train_model(model, dataloader, criterion, optimizer, num_epochs) 
-
-
-
-##########################################
-# # train test split version
-# # Hyperparameters
-# num_epochs = 10
-# learning_rate = 0.001
-# batch_size = 32  # Added batch size
-
-# # Initialize Model, Loss Function, and Optimizer
-# vocab_size = len(vocab)  # Ensure this is accurate
-# num_features = X_train.shape[1]  # Number of numerical features
-# cat_features = multi_class_cat_data.shape[1]  # Number of categorical features
-
-# model = SimpleMultiModalNN(vocab_size, embedding_dim, num_features, cat_features, output_dim=1)  
-# criterion = nn.BCEWithLogitsLoss() 
-# optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-# # Create dataloader objects 
-# train_dataloader = DataLoader(
-#     WordEmbedDataset(text_data_1, text_data_2, X_train, multi_class_cat_data, y_train), 
-#     batch_size=batch_size, 
-#     shuffle=True, 
-#     collate_fn=pad_collate) 
-
-# test_dataloader = DataLoader(
-#     WordEmbedDataset(text_data_1, text_data_2, X_test, multi_class_cat_data, y_test), 
-#     batch_size=batch_size, 
-#     shuffle=False, 
-#     collate_fn=pad_collate)  
-
-# # Training and Evaluation Loop
-# def train_and_evaluate(model, train_loader, test_loader, criterion, optimizer, num_epochs):
-#     for epoch in range(num_epochs):
-#         model.train()  # Set model to training mode
-#         for text_1, text_2, numeric_data, multi_class_cat_data, targets in train_loader: 
-#             optimizer.zero_grad()  
-#             outputs = model(text_1, text_2, numeric_data, multi_class_cat_data)  
-#             loss = criterion(outputs.squeeze(1), targets.float())  
+# Calculate and print average accuracy
+avg_accuracy = sum(cv_accuracies) / len(cv_accuracies)
+print(f"Average Cross-Validation Accuracy: {avg_accuracy}")
+
+def evaluate_model(test_loader):
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data, target in test_loader:
+            log_probs = model(sentence_data_padded, company_data_padded, numeric_data, multi_class_cat_data)
+            # Assuming binary classification: predict class based on threshold (0.5)
+            predicted = (torch.sigmoid(log_probs) > 0.5).float()
+            correct += (predicted == target).sum().item()
+            total += target.size(0)
+    accuracy = correct / total
+    return accuracy
+
+
+
+
+
+    # Training
+#     model.train()
+#     for epoch in range(10):  # Lower number of epochs for brevity
+#         total_loss = 0
+#         for text_1, text_2, numeric_features, multi_class_cat_data, target in train_loader:
+#             # Ensure correct shape of target
+#             target = target.unsqueeze(1).float()
+            
+#             # Training Step
+#             optimizer.zero_grad()
+#             log_probs = model(text_1, text_2, numeric_features, multi_class_cat_data)
+#             loss = loss_function(log_probs, target)
 #             loss.backward()
 #             optimizer.step()
-
-#         model.eval()  # Set to evaluation mode
-#         with torch.no_grad():
-#           correct = 0
-#           total = 0
-#           for text_1, text_2, numeric_data, multi_class_cat_data, targets in test_loader:
-#             outputs = model(text_1, text_2, numeric_data, multi_class_cat_data)
-#             _, predicted = torch.max(outputs.data, dim=1)  # Get predicted class
-#             total += targets.size(0)  
-#             correct += (predicted == targets).sum().item()  
-        
-#         accuracy = 100 * correct / total
-#         print(f'Epoch {epoch + 1}, Accuracy: {accuracy:.2f}%')
-
-# train_and_evaluate(model, train_dataloader, test_dataloader, criterion, optimizer, num_epochs) 
-
-#################################################
-
-
-
-
-############################
-
-# neural network 
-
-
-# attempt 2
-import torch.nn as nn
-import torch.nn.functional as F  
-
-class WordEmbeddingModel(nn.Module):
-    def __init__(self, num_numeric_features):
-        super().__init__()
-        EMBEDDING_DIM = 10
-        CONTEXT_SIZE_1 = 1 
-        CONTEXT_SIZE_2 = 1
-
-        self.linear1 = nn.Linear(2 * EMBEDDING_DIM + num_numeric_features, 128)  
-        self.linear2 = nn.Linear(128, 1)  
-
-    def forward(self, text_1, text_2, numeric_features):
-        embed_1 = self.contextual_embedding(text_1, CONTEXT_SIZE_1)
-        embed_2 = self.contextual_embedding(text_2, CONTEXT_SIZE_2)
-        combined_embeds = torch.cat((embed_1, embed_2, numeric_features), dim=1) 
-        out = F.relu(self.linear1(combined_embeds)) 
-        out = self.linear2(out)
-        log_probs = torch.sigmoid(out) 
-        return log_probs 
+#             total_loss += loss.item()
+#         print(f"Epoch {epoch+1}, Loss: {total_loss}")
     
-    def contextual_embedding(self, text_data, context_size):
-        embeds = []
-        for i in range(len(text_data)):
-            context_window = text_data[max(0, i - context_size) : i + context_size + 1]
-            embed = F.embedding(torch.tensor(context_window), nn.Embedding(max(context_window) + 1, self.embedding_dim))
-            embeds.append(embed.mean(dim=0))  # Average over context window
-        return torch.stack(embeds)  
-
-model = WordEmbeddingModel(len(df.columns) - (len(text_data_1[0]) + 1)) 
-
-#######
-
-# losses = []
-# val_losses = []
-# loss_function = nn.BCELoss()
-# model = WordEmbeddingModel(len(df.columns) - (len(text_data_1[0]) + 1))  EMBEDDING_DIM, CONTEXT_SIZE)
-# optimizer = optim.SGD(model.parameters(), lr=0.001)
-
-
-import torch.nn as nn
-import torch.optim as optim
-from sklearn.metrics import accuracy_score  
-
-# ... (Your data preparation, dataset, and model definition remain unchanged) ...
-
-# Assuming your data is prepared and accessible within the dataloader
-loss_function = nn.BCEWithLogitsLoss()  # Assuming binary classification
-model = WordEmbeddingModel(len(df.columns) - (len(text_data_1[0]) + 1)) 
-optimizer = optim.Adam(model.parameters(), lr=0.001)  # Adjust optimizer if needed
-
-losses = []
-for epoch in range(100):
-    total_loss = 0
-    for text_1, text_2, numeric_features, target in dataloader:
-        # Data Processing (Ensure this aligns with output from your dataloader)
-        text_1 = text_1.long()    # Assuming word indices
-        text_2 = text_2.long()    # Assuming word indices
-        numeric_features = numeric_features.float()  # Assuming numeric features
-        target = target.float().unsqueeze(1)  
-
-        # Training Step
-        model.zero_grad()
-        log_probs = model(text_1, text_2, numeric_features)
-        loss = loss_function(log_probs, target)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-    losses.append(total_loss)
+#     # Evaluation
+#     model.eval()
+#     all_preds = []
+#     all_targets = []
+#     with torch.no_grad():
+#         for text_1, text_2, numeric_features, multi_class_cat_data, target in test_loader:
+#             # Ensure correct shape of target
+#             target = target.unsqueeze(1).float()
+            
+#             log_probs = model(text_1, text_2, numeric_features, multi_class_cat_data)            
+#             preds = (log_probs > 0.5).float()
+#             all_preds.extend(preds.cpu().numpy())
+#             all_targets.extend(target.cpu().numpy())
         
-print('Training Completed!')  
+#     accuracy = accuracy_score(all_targets, all_preds)
+#     cv_accuracies.append(accuracy)
+#     print(f"Fold Accuracy: {accuracy}")
 
-
-
-######
-
-
-
-
+# print(f"Mean CV Accuracy: {np.mean(cv_accuracies)}")
 
 
 
 
 
+
+
+
+# ##########################################################
+# # K-fold cross-validation
+# # kf = KFold(n_splits=5)
+# X = list(range(len(dataset)))  # Indices for the dataset
+
+# from sklearn.model_selection import KFold
+
+# kf = KFold(n_splits=3)  # Ensure n_splits is not greater than the number of samples
+# X = list(range(len(dataset)))  # Indices for the dataset
+# y = target_data  # Your target data
+# cv_accuracies = []
+# for train_index, test_index in kf.split(X):
+#     # Split data
+#     train_data = torch.utils.data.Subset(dataset, train_index)
+#     test_data = torch.utils.data.Subset(dataset, test_index)
+    
+#     train_loader = DataLoader(train_data, batch_size=4, shuffle=True, collate_fn=collate_fn)
+#     test_loader = DataLoader(test_data, batch_size=4, shuffle=False, collate_fn=collate_fn)
+    
+#     # Training
+#     model.train()
+#     for train_index, test_index in kf.split(X):
+#         # Your existing code for training and evaluation goes here
+
+#         # Split data
+#         train_data = torch.utils.data.Subset(dataset, train_index)
+#         test_data = torch.utils.data.Subset(dataset, test_index)
+        
+#         train_loader = DataLoader(train_data, batch_size=4, shuffle=True, collate_fn=collate_fn)
+#         test_loader = DataLoader(test_data, batch_size=4, shuffle=False, collate_fn=collate_fn)
+        
+#         # Training
+#         model.train()
+
+#         for epoch in range(10):  # Lower number of epochs for brevity
+#             total_loss = 0
+#             for text_1, text_2, numeric_features, multi_class_cat_data, target in train_loader:
+#                 # Ensure correct shape of target
+#                 target = target.unsqueeze(1).float()
+            
+#                 # Training Step
+#                 optimizer.zero_grad()
+#                 log_probs = model(text_1, text_2, numeric_features, multi_class_cat_data)
+#                 loss = loss_function(log_probs, target)
+#                 loss.backward()
+#                 optimizer.step()
+#                 total_loss += loss.item()
+#             print(f"Epoch {epoch+1}, Loss: {total_loss}")
+        
+#         # Evaluation
+#         model.eval()
+#         all_preds = []
+#         all_targets = []
+#         with torch.no_grad():
+#             for text_1, text_2, numeric_features, multi_class_cat_data, target in test_loader:
+#                 # Ensure correct shape of target
+#                 target = target.unsqueeze(1).float()
+                
+#                 log_probs = model(text_1, text_2, numeric_features, multi_class_cat_data)            
+#                 preds = (log_probs > 0.5).float()
+#                 all_preds.extend(preds.cpu().numpy())
+#                 all_targets.extend(target.cpu().numpy())
+        
+#         accuracy = accuracy_score(all_targets, all_preds)
+#         cv_accuracies.append(accuracy)
+#         print(f"Fold Accuracy: {accuracy}")
+
+#     print(f"Mean CV Accuracy: {np.mean(cv_accuracies)}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # ############
 
 
